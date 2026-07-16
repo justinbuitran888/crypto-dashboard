@@ -97,6 +97,8 @@ HISTORICAL_STATS = {
     "Double Bottom": dict(win_rate=None, avg_r=None, trades=0, confidence="chưa backtest -- chạy pattern_backtest cho bottom patterns"),
     "Head-and-Shoulders Bottom": dict(win_rate=None, avg_r=None, trades=0, confidence="chưa backtest"),
     "Cup and Handle": dict(win_rate=None, avg_r=None, trades=0, confidence="chưa backtest"),
+    "EMA34 Breakdown Confirmed": dict(win_rate=44.2, avg_r=0.367, trades=330,
+                                       confidence="cao (5 năm, ~200 coin, đã validate stop tối ưu)"),
 }
 
 
@@ -544,9 +546,72 @@ def check_cup_and_handle(symbol, df):
     return None
 
 
+def check_ema34_breakdown_confirmed(symbol, df):
+    """The most thoroughly validated setup from this project's research:
+    Setup (>=10 days basing near EMA34, >=2 touches) -> Signal (first close
+    below EMA34) -> Confirm (still below EMA34 2 days later, checked here
+    against TODAY). Stop = high of the Signal candle (the tightest of 6
+    stop methods tested -- best real avg_r). Target = measured move
+    (accumulation range height projected down from entry)."""
+    n = len(df)
+    last_i = n - 1
+    if last_i < 40:
+        return None
+    df = df.copy()
+    df["ema34"] = df["close"].ewm(span=34, adjust=False).mean()
+    is_pivot = flag_pivots(df["high"], mode="high")
+    dist_pct = (df["close"] - df["ema34"]).abs() / df["ema34"] * 100
+    near_band = (dist_pct <= 8.0).values
+
+    signal_i = last_i - 2  # today must be exactly 2 days after the Signal day
+    if signal_i < 35 or not near_band[signal_i - 1]:
+        return None
+
+    acc_end = signal_i - 1
+    acc_start = acc_end
+    while acc_start > 0 and near_band[acc_start - 1]:
+        acc_start -= 1
+    days_in_accumulation = acc_end - acc_start + 1
+    if days_in_accumulation < 10:
+        return None
+
+    acc_high = df["high"].iloc[acc_start:acc_end + 1].max()
+    acc_low = df["low"].iloc[acc_start:acc_end + 1].min()
+    touches = sum(1 for k in range(acc_start, acc_end + 1) if is_pivot[k] and df.at[k, "high"] >= acc_high * 0.98)
+    if max(touches, 1) < 2:
+        return None
+
+    if not (df.at[signal_i, "close"] < df.at[signal_i, "ema34"]):
+        return None
+    if signal_i > acc_end + 15:
+        return None
+    for k in range(acc_end + 1, signal_i):
+        if df.at[k, "close"] < df.at[k, "ema34"] or df.at[k, "close"] > acc_high:
+            return None  # an earlier day already qualified, or price broke UP instead
+
+    if not (df.at[last_i, "close"] < df.at[last_i, "ema34"]):
+        return None  # not confirmed -- price reclaimed EMA34, signal invalidated
+
+    entry = df.at[last_i, "close"]
+    stop = df.at[signal_i, "high"] * 1.005
+    risk = stop - entry
+    if risk <= 0 or (risk / entry) < 0.002:
+        return None
+    target = entry - (acc_high - acc_low)
+    if entry - target <= 0:
+        return None
+
+    why = (f"Coin tích lũy {days_in_accumulation} ngày quanh EMA34, chạm đỉnh vùng này ít nhất "
+           f"{max(touches,1)} lần không vượt qua được. 2 ngày trước giá đóng cửa phá xuống dưới EMA34 "
+           f"(Signal), hôm nay vẫn tiếp tục ở dưới (Confirm) -- xác nhận đảo chiều thật, không phải hồi giả.")
+    return dict(direction="SHORT", setup="EMA34 Breakdown Confirmed", symbol=symbol, entry=entry, stop=stop,
+                target=target, risk_pct=risk / entry * 100, why=why)
+
+
 CHECK_FUNCTIONS = [
     check_bounce_short, check_first_red_day, check_double_top, check_head_shoulders_top,
     check_double_bottom, check_head_shoulders_bottom, check_cup_and_handle,
+    check_ema34_breakdown_confirmed,
 ]
 
 
