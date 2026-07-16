@@ -977,7 +977,7 @@ def main():
             print(f"  {symbol}: skipped ({e})")
         time.sleep(SLEEP_BETWEEN_CALLS)
 
-    scanned_at = pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S")
+    scanned_at = (pd.Timestamp.now("UTC") + pd.Timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S") + " (giờ VN)"
     html = build_html(signals, all_coins, watchlist, scanned_at, len(symbols))
     with open("dashboard.html", "w", encoding="utf-8") as f:
         f.write(html)
