@@ -847,7 +847,7 @@ function filterCoins() {{
 # MAIN
 # ==========================================================================
 def main():
-    exchange = ccxt.binance()
+    exchange = ccxt.okx()
     print("Fetching ALL Binance USDT pairs (the actual scan universe)...")
     symbols = get_all_binance_usdt_symbols(exchange)
     print(f"  {len(symbols)} coins on Binance (after excluding stablecoins/leveraged tokens).")
