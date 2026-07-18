@@ -85,6 +85,7 @@ CH_HANDLE_MAX_DEPTH_PCT = 15.0
 CH_HANDLE_MAX_BARS = 15
 
 BIG_PUMP_THRESHOLD_PCT = 30.0   # daily candle % gain to flag for the watchlist
+BIG_PUMP_7D_THRESHOLD_PCT = 30.0   # cumulative % gain over 7 days to flag for the watchlist
 
 # ---- Universal filters applied to EVERY setup ----
 MAX_DECLINE_FROM_PEAK_PCT_FOR_SHORT = 60.0   # don't short if already down >60% from its peak
@@ -658,6 +659,27 @@ def check_big_pump_watch(symbol, df, threshold_pct=BIG_PUMP_THRESHOLD_PCT):
                 day_low=df.at[last_i, "low"], day_close=today_close)
 
 
+def check_big_pump_watch_7d(symbol, df, threshold_pct=BIG_PUMP_7D_THRESHOLD_PCT):
+    """Same idea as check_big_pump_watch, but measures the CUMULATIVE %
+    change over the last 7 days instead of a single day -- catches coins
+    that pumped steadily (not necessarily in one big candle)."""
+    if len(df) < 8:
+        return None
+    n = len(df)
+    last_i = n - 1
+    ref_close = df.at[last_i - 7, "close"]
+    today_close = df.at[last_i, "close"]
+    if ref_close <= 0:
+        return None
+    pump_pct_7d = (today_close - ref_close) / ref_close * 100
+    if pump_pct_7d < threshold_pct:
+        return None
+    period_high = df["high"].iloc[last_i - 7:last_i + 1].max()
+    period_low = df["low"].iloc[last_i - 7:last_i + 1].min()
+    return dict(symbol=symbol, pump_pct=pump_pct_7d, day_high=period_high,
+                day_low=period_low, day_close=today_close)
+
+
 def check_cup_and_handle(symbol, df):
     ph = flag_pivots(df["high"], mode="high")
     pl = flag_pivots(df["low"], mode="low")
@@ -867,7 +889,8 @@ CHECK_FUNCTIONS = [
 # ==========================================================================
 # HTML DASHBOARD (modern design)
 # ==========================================================================
-def build_html(signals, all_coins, watchlist, scanned_at, n_coins, stock_signals=None, all_stocks=None):
+def build_html(signals, all_coins, watchlist, scanned_at, n_coins, stock_signals=None, all_stocks=None, watchlist_7d=None):
+    watchlist_7d = watchlist_7d or []
     stock_signals = stock_signals or []
     all_stocks = all_stocks or []
     shorts = [s for s in signals if s["direction"] == "SHORT"]
@@ -963,6 +986,7 @@ def build_html(signals, all_coins, watchlist, scanned_at, n_coins, stock_signals
                 f'<td><a class="tv-link" href="{w["tv_link"]}" target="_blank" rel="noopener">Xem chart ↗</a></td></tr>')
 
     watch_rows = "".join(watch_row(w) for w in sorted(watchlist, key=lambda x: -x["pump_pct"]))
+    watch_rows_7d = "".join(watch_row(w) for w in sorted(watchlist_7d, key=lambda x: -x["pump_pct"]))
 
     coin_rows = "".join(coin_row(c) for c in sorted(all_coins, key=lambda x: x["symbol"]))
 
@@ -1065,7 +1089,7 @@ def build_html(signals, all_coins, watchlist, scanned_at, n_coins, stock_signals
 <div class="tabs">
   <button class="tab-btn active" onclick="switchTab('short', this)">🔴 Short signals ({len(shorts)})</button>
   <button class="tab-btn" onclick="switchTab('long', this)">🟢 Long signals ({len(longs)})</button>
-  <button class="tab-btn" onclick="switchTab('watch', this)">👀 Theo dõi (Pump &gt;{BIG_PUMP_THRESHOLD_PCT:.0f}%) ({len(watchlist)})</button>
+  <button class="tab-btn" onclick="switchTab('watch', this)">👀 Theo dõi Pump ({len(watchlist)} · {len(watchlist_7d)})</button>
   <button class="tab-btn" onclick="switchTab('lookup', this)">📋 Tra cứu tất cả coin ({len(all_coins)})</button>
   <button class="tab-btn" onclick="switchTab('vnstock', this)">📈 Chứng khoán VN ({len(stock_signals)})</button>
 </div>
@@ -1081,6 +1105,7 @@ def build_html(signals, all_coins, watchlist, scanned_at, n_coins, stock_signals
 <div id="tab-watch" class="tab-panel">
   <p class="empty" style="margin-bottom:12px;">Coin có nến ngày tăng &gt;{BIG_PUMP_THRESHOLD_PCT:.0f}% -- không phải tín hiệu vào lệnh, chỉ để theo dõi: coin cần
   "nằm im" một thời gian rồi hồi lại test đúng vùng đỉnh này và bị từ chối mới thành tín hiệu Bounce Short thật.</p>
+  <h2>Pump ≥{BIG_PUMP_THRESHOLD_PCT:.0f}% trong 1 ngày</h2>
   <div class="table-wrap">
     <table id="watchTable">
       <thead><tr>
@@ -1094,6 +1119,23 @@ def build_html(signals, all_coins, watchlist, scanned_at, n_coins, stock_signals
         <th>Chart</th>
       </tr></thead>
       <tbody>{watch_rows if watchlist else '<tr><td colspan="8" style="text-align:center;color:#888;">Không có coin nào pump hôm nay</td></tr>'}</tbody>
+    </table>
+  </div>
+
+  <h2 style="margin-top:24px;">Pump ≥{BIG_PUMP_7D_THRESHOLD_PCT:.0f}% trong 7 ngày (tăng dồn, không cần 1 nến)</h2>
+  <div class="table-wrap">
+    <table id="watchTable7d">
+      <thead><tr>
+        <th onclick="sortTable(0,'watchTable7d')">Coin <span id="arrow_watchTable7d_0"></span></th>
+        <th onclick="sortTable(1,'watchTable7d')">% tăng 7 ngày <span id="arrow_watchTable7d_1"></span></th>
+        <th onclick="sortTable(2,'watchTable7d')">Category <span id="arrow_watchTable7d_2"></span></th>
+        <th onclick="sortTable(3,'watchTable7d')">Market Cap <span id="arrow_watchTable7d_3"></span></th>
+        <th onclick="sortTable(4,'watchTable7d')">ADR 50d <span id="arrow_watchTable7d_4"></span></th>
+        <th onclick="sortTable(5,'watchTable7d')">Range 50d <span id="arrow_watchTable7d_5"></span></th>
+        <th onclick="sortTable(6,'watchTable7d')">Vol/MC <span id="arrow_watchTable7d_6"></span></th>
+        <th>Chart</th>
+      </tr></thead>
+      <tbody>{watch_rows_7d if watchlist_7d else '<tr><td colspan="8" style="text-align:center;color:#888;">Không có coin nào pump ≥30% trong 7 ngày qua</td></tr>'}</tbody>
     </table>
   </div>
 </div>
@@ -1190,6 +1232,7 @@ def main():
     signals = []
     all_coins = []
     watchlist = []
+    watchlist_7d = []
     for idx, symbol in enumerate(symbols, 1):
         try:
             base = symbol.split("/")[0]
@@ -1221,6 +1264,16 @@ def main():
                 pump["tv_link"] = tv_link
                 watchlist.append(pump)
 
+            pump_7d = check_big_pump_watch_7d(symbol, df)
+            if pump_7d:
+                pump_7d["category"] = category
+                pump_7d["market_cap"] = mcap
+                pump_7d["adr_pct_50d"] = adr_pct_50d
+                pump_7d["range_pct_50d"] = range_pct_50d
+                pump_7d["vol_mcap_pct"] = vol_mcap_pct
+                pump_7d["tv_link"] = tv_link
+                watchlist_7d.append(pump_7d)
+
             for fn in CHECK_FUNCTIONS:
                 r = fn(symbol, df)
                 if r and passes_universal_filters(r["direction"], df, len(df) - 1):
@@ -1243,7 +1296,7 @@ def main():
 
     scanned_at = (pd.Timestamp.now("UTC") + pd.Timedelta(hours=7)).strftime("%Y-%m-%d %H:%M:%S") + " (giờ VN)"
     html = build_html(signals, all_coins, watchlist, scanned_at, len(symbols),
-                       stock_signals=stock_signals, all_stocks=all_stocks)
+                       stock_signals=stock_signals, all_stocks=all_stocks, watchlist_7d=watchlist_7d)
     with open("dashboard.html", "w", encoding="utf-8") as f:
         f.write(html)
     print(f"\nSaved dashboard.html -- {len(signals)} crypto signals, {len(stock_signals)} VN stock signals, "
