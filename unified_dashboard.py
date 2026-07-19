@@ -1092,6 +1092,7 @@ def build_html(signals, all_coins, watchlist, scanned_at, n_coins, stock_signals
   <button class="tab-btn" onclick="switchTab('watch', this)">👀 Theo dõi Pump ({len(watchlist)} · {len(watchlist_7d)})</button>
   <button class="tab-btn" onclick="switchTab('lookup', this)">📋 Tra cứu tất cả coin ({len(all_coins)})</button>
   <button class="tab-btn" onclick="switchTab('vnstock', this)">📈 Chứng khoán VN ({len(stock_signals)})</button>
+  <button class="tab-btn" onclick="switchTab('library', this)">📚 Thư viện</button>
 </div>
 
 <div id="tab-short" class="tab-panel active">
@@ -1168,6 +1169,97 @@ def build_html(signals, all_coins, watchlist, scanned_at, n_coins, stock_signals
   {section(stock_shorts, "Không có tín hiệu short trên chứng khoán VN hôm nay")}
   <h2 class="long-h" style="color:var(--long); margin-top:20px;">🟢 Long ({len(stock_longs)})</h2>
   {section(stock_longs, "Không có tín hiệu long trên chứng khoán VN hôm nay")}
+</div>
+
+<div id="tab-library" class="tab-panel">
+  <p class="empty" style="margin-bottom:16px;">Trang tra cứu tĩnh -- lưu lại toàn bộ kết luận, thống kê, và logic đã nghiên cứu
+  trong quá trình xây dựng hệ thống này. Không quét lại mỗi lần chạy, chỉ để tham khảo.</p>
+
+  <div class="signal-card" style="margin-bottom:16px;">
+    <h2>1. Tổng quan tất cả setup đã validate</h2>
+    <table>
+      <thead><tr><th>Setup</th><th>Hướng</th><th>Win rate</th><th>avg_r</th><th>Số mẫu</th><th>Độ tin cậy</th></tr></thead>
+      <tbody>
+        <tr><td>EMA34 Breakdown Confirmed</td><td>Short</td><td>44.2%</td><td>+0.37</td><td>330 (5 năm, ~200 coin)</td><td>Cao</td></tr>
+        <tr><td>Double Top</td><td>Short</td><td>64.7%</td><td>+0.11</td><td>669</td><td>Cao</td></tr>
+        <tr><td>Head-and-Shoulders Top</td><td>Short</td><td>50.8%</td><td>+0.09</td><td>242</td><td>Trung bình</td></tr>
+        <tr><td>Bounce Short</td><td>Short</td><td>~55%</td><td>+0.15</td><td>31</td><td>Trung bình (mẫu nhỏ)</td></tr>
+        <tr><td>First Red Day</td><td>Short</td><td>25%</td><td>-0.31</td><td>4</td><td>Thấp (âm, mẫu quá nhỏ)</td></tr>
+        <tr><td>Descending Triangle</td><td>Short</td><td>~50%</td><td>~0.00</td><td>157</td><td>Không có edge -- đã loại</td></tr>
+        <tr><td>Episodic Pivot (Qullamaggie)</td><td>Long</td><td>chưa đo</td><td>chưa đo</td><td>0</td><td>Setup mới, chưa backtest</td></tr>
+        <tr><td>VCP Breakout (Qullamaggie)</td><td>Long</td><td>chưa đo</td><td>chưa đo</td><td>0</td><td>Setup mới, chưa test kỹ</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="signal-card" style="margin-bottom:16px;">
+    <h2>2. Logic chi tiết EMA34 Breakdown Confirmed (setup chính, nghiên cứu kỹ nhất)</h2>
+    <table>
+      <thead><tr><th>Bước</th><th>Định nghĩa</th></tr></thead>
+      <tbody>
+        <tr><td>Setup</td><td>Tích lũy &ge;10 ngày quanh EMA34 (&plusmn;8%)</td></tr>
+        <tr><td>Điều kiện chạm</td><td>&ge;2 lần giá chạm đỉnh vùng tích lũy mà không vượt qua</td></tr>
+        <tr><td>Signal</td><td>Nến ngày đầu tiên đóng cửa dưới EMA34 sau vùng tích lũy</td></tr>
+        <tr><td>Confirm</td><td>2 ngày sau Signal, giá vẫn đóng dưới EMA34 (nếu hồi lại &rarr; hủy tín hiệu)</td></tr>
+        <tr><td>Entry</td><td>Giá đóng cửa ngày Confirm</td></tr>
+        <tr><td>Stop</td><td><b>Đỉnh nến Signal</b> + buffer 0.5% -- đã test 6 cách, đây là tốt nhất</td></tr>
+        <tr><td>Target</td><td>Measured move (chiều cao vùng tích lũy chiếu xuống từ Entry)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="signal-card" style="margin-bottom:16px;">
+    <h2>3. So sánh 6 cách đặt Stop Loss (kết quả thật, ~200 coin/5 năm)</h2>
+    <table>
+      <thead><tr><th>Method</th><th>Win rate</th><th>avg_r</th><th>R:R</th><th>Risk% TB</th></tr></thead>
+      <tbody>
+        <tr><td>full_range (đỉnh cả vùng tích lũy)</td><td>59.8%</td><td>0.125</td><td>0.95</td><td>23.2%</td></tr>
+        <tr><td>last_touch</td><td>59.5%</td><td>0.133</td><td>0.99</td><td>22.5%</td></tr>
+        <tr><td>recent_5d</td><td>56.6%</td><td>0.148</td><td>1.39</td><td>18.2%</td></tr>
+        <tr><td><b>signal_candle (đang dùng)</b></td><td>44.2%</td><td><b>0.367</b></td><td>3.78</td><td>10.2%</td></tr>
+        <tr><td>confirm_candle</td><td>21.8% (bị quét nhiều)</td><td>0.285</td><td>8.96</td><td>3.9%</td></tr>
+        <tr><td>signal_to_confirm_max</td><td>43.4%</td><td>0.346</td><td>3.39</td><td>10.2%</td></tr>
+      </tbody>
+    </table>
+    <p class="why" style="margin-top:10px;">Kết luận: <b>signal_candle</b> (đặt stop ngay trên đỉnh nến Signal, không phải đỉnh
+    cả vùng tích lũy) cho avg_r cao nhất. confirm_candle có R:R lý thuyết đẹp hơn nhưng bị quét quá nhiều vì bỏ sót spike
+    giữa Signal và Confirm -- không nên dùng.</p>
+  </div>
+
+  <div class="signal-card" style="margin-bottom:16px;">
+    <h2>4. Nghiên cứu Volume tại chuỗi tăng nóng &ge;500%/300% (theo market cap)</h2>
+    <table>
+      <thead><tr><th>Market cap</th><th>Vol tăng bao nhiêu lần (đỉnh so T-1)</th><th>% tăng riêng ngày đỉnh</th><th>% giảm riêng ngày Red đầu tiên</th></tr></thead>
+      <tbody>
+        <tr><td>$1M-$10M</td><td>~200x (trung vị)</td><td>~-1% (đỉnh thường lặng)</td><td><b>-19.5%</b> (mạnh nhất tới -73%)</td></tr>
+        <tr><td>$10M-$50M</td><td>~100x</td><td>~19%</td><td>-7.6%</td></tr>
+        <tr><td>$50M-$100M</td><td>~51x</td><td>~4.6%</td><td>-12.6%</td></tr>
+        <tr><td>$100M-$500M</td><td>~61x</td><td>~11%</td><td>-9.5%</td></tr>
+        <tr><td>&gt;$1B</td><td>~104x</td><td>~1.8% (rất nhẹ)</td><td>-6.5% (hiền nhất)</td></tr>
+      </tbody>
+    </table>
+    <p class="why" style="margin-top:10px;">Coin vốn hóa càng nhỏ, ngày Red đầu tiên giảm càng dữ dội (có trường hợp -73% chỉ
+    trong 1 ngày). Coin lớn "hiền" hơn nhiều ở cả 2 chiều.</p>
+  </div>
+
+  <div class="signal-card" style="margin-bottom:16px;">
+    <h2>5. Bộ lọc tổng quát áp dụng cho MỌI setup</h2>
+    <ul style="font-size:13px; color:var(--text-dim); line-height:1.8; padding-left:20px;">
+      <li>Không Short nếu giá đã giảm &gt;60% từ đỉnh gần nhất (180 ngày) -- tránh short coin đã sập rồi</li>
+      <li>Không Long nếu giá đã tăng &gt;300% trong 60 ngày -- tránh đu đỉnh coin đã quá nóng</li>
+    </ul>
+  </div>
+
+  <div class="signal-card">
+    <h2>6. Setup theo Christian Qullamaggie (mới, đang thử nghiệm)</h2>
+    <p class="why">Đặc điểm chung: win rate gốc chỉ 20-35%, nhưng lãi lớn nhờ R:R cực cao (~1:3 hoặc hơn) -- khớp với khẩu vị
+    "risk nhỏ nhất, reward lớn nhất, win rate ~30% là đủ" bạn đã chọn.</p>
+    <ul style="font-size:13px; color:var(--text-dim); line-height:1.8; padding-left:20px;">
+      <li><b>Episodic Pivot</b>: 1 phiên tăng vọt &ge;15% kèm volume &ge;2x trung bình, tạo nền hẹp, rồi breakout lên trên -- Long</li>
+      <li><b>VCP Breakout</b>: các nhịp điều chỉnh siết chặt dần (mỗi lần nhỏ hơn lần trước) trong khi giá giữ trên đường trung bình, rồi breakout -- Long</li>
+      <li><b>Parabolic Short</b>: đã có tương đương (Bounce Short, First Red Day, EMA34 Breakdown Confirmed)</li>
+    </ul>
+  </div>
 </div>
 
 <script>
